@@ -29,8 +29,8 @@ const menuItems = [
                 icon: <MdSupervisedUserCircle />,
             },
             {
-                title: "Products",
-                path: "/dashboard/products",
+                title: "Properties",
+                path: "/dashboard/properties",
                 icon: <MdShoppingBag />,
             },
         ],
@@ -49,7 +49,7 @@ const Sidebar = async () => {
                     height="50"
                 />
                 <div className={styles.userDetail}>
-                    <span className={styles.username}>kakao</span>
+                    <span className={styles.username}>Admin</span>
                     <span className={styles.userTitle}>Administrator</span>
                 </div>
             </div>

@@ -2,36 +2,24 @@
 
 import db from "@/DBConfig"; // Import your MySQL database connection
 import bcrypt from "bcrypt";
+import fs from "fs";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 // Add a new user
 export const addUser = async (formData) => {
-    const { username, email, password, phone, address, isAdmin, isActive } =
-        Object.fromEntries(formData);
+    const { username, email, phone, address } = Object.fromEntries(formData);
 
     try {
         // Generate hashed password
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
-
-        // Convert booleans to integers for MySQL
-        const isAdminInt = isAdmin === true || isAdmin === "true" ? 1 : 0;
-        const isActiveInt = isActive === true || isActive === "true" ? 1 : 0;
+        // const salt = await bcrypt.genSalt(10);
+        // const hashedPassword = await bcrypt.hash(password, salt);
 
         // Insert the new user into the database
         await db.query(
-            `INSERT INTO users (username, email, password, phone, address, isAdmin, isActive) 
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [
-                username,
-                email,
-                hashedPassword,
-                phone,
-                address,
-                isAdminInt,
-                isActiveInt,
-            ]
+            `INSERT INTO users (username, email, phone, address) 
+             VALUES (?, ?, ?, ?)`,
+            [username, email, phone, address]
         );
 
         console.log("User added successfully!");
@@ -46,31 +34,26 @@ export const addUser = async (formData) => {
 
 // Update a user
 export const updateUser = async (formData) => {
-    const { id, username, email, password, phone, address, isAdmin, isActive } =
+    const { id, username, email, phone, address } =
         Object.fromEntries(formData);
 
     try {
         // Hash password only if it's provided
-        let hashedPassword = null;
-        if (password) {
-            const salt = await bcrypt.genSalt(10);
-            hashedPassword = await bcrypt.hash(password, salt);
-        }
-
-        // Convert boolean values to integers for MySQL
-        const isAdminInt = isAdmin === true || isAdmin === "true" ? 1 : 0;
-        const isActiveInt = isActive === true || isActive === "true" ? 1 : 0;
+        // let hashedPassword = null;
+        // if (password) {
+        //     const salt = await bcrypt.genSalt(10);
+        //     hashedPassword = await bcrypt.hash(password, salt);
+        // }
 
         // Prepare the fields to be updated
         const updateFields = {
             username,
             email,
-            password: hashedPassword, // Only include hashed password if it's provided
             phone,
             address,
-            isAdmin: isAdminInt,
-            isActive: isActiveInt,
         };
+
+        console.log("Updating user:", updateFields);
 
         // Remove fields with null or undefined values
         Object.keys(updateFields).forEach(
@@ -101,66 +84,121 @@ export const updateUser = async (formData) => {
 };
 
 // Add a new product
-export const addProduct = async (formData) => {
-    const { title, desc, price, stock, color, size } =
-        Object.fromEntries(formData);
+export const addProperty = async (formData) => {
+    const {
+        title,
+        desc,
+        price,
+        location,
+        address,
+        zipcode,
+        user_id,
+        rooms,
+        baths,
+        sqm,
+    } = Object.fromEntries(formData);
+
+    console.log(
+        "Adding new property:",
+        title,
+        desc,
+        price,
+        location,
+        address,
+        zipcode,
+        user_id,
+        rooms,
+        baths,
+        sqm
+    );
 
     try {
-        // Insert the new product into the database
+        // Insert the new property into the database
         const [result] = await db.query(
-            `INSERT INTO products (title, description, price, stock, color, size) 
-            VALUES (?, ?, ?, ?, ?, ?)`,
-            [title, desc, price, stock, color, size]
+            `INSERT INTO properties (title, description, price, location, address, zipcode, user_id, rooms, baths, sqm) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                title,
+                desc,
+                price,
+                location,
+                address,
+                zipcode,
+                user_id,
+                rooms,
+                baths,
+                sqm,
+            ]
         );
 
-        console.log("New product added:", result.insertId);
+        console.log("New property added:", result.insertId);
     } catch (err) {
-        console.error("Error adding product:", err.message);
-        throw new Error("Failed to create product!");
+        console.error("Error adding property:", err.message);
+        throw new Error("Failed to create property!");
     }
 
-    revalidatePath("/dashboard/products");
-    redirect("/dashboard/products");
+    revalidatePath("/dashboard/properties");
+    redirect("/dashboard/properties");
 };
 
-// Update a product
-export const updateProduct = async (formData) => {
-    const { id, title, desc, price, stock, color, size } =
-        Object.fromEntries(formData);
+export const updateProperty = async (formData) => {
+    const {
+        id,
+        title,
+        price,
+        location,
+        address,
+        zipcode,
+        rooms,
+        baths,
+        sqm,
+        description,
+    } = Object.fromEntries(formData);
 
     try {
+        // Create a map of fields to update
         const fieldsToUpdate = {
             title,
-            description: desc,
             price,
-            stock,
-            color,
-            size,
+            location,
+            address,
+            zipcode,
+            rooms,
+            baths,
+            sqm,
+            description,
         };
 
+        // Generate the SQL update query dynamically based on provided values
         const updates = Object.entries(fieldsToUpdate)
-            .filter(([, value]) => value !== "" && value !== undefined)
-            .map(([key]) => `${key} = ?`)
+            .filter(([, value]) => value !== "" && value !== undefined) // Exclude empty or undefined values
+            .map(([key]) => `${key} = ?`) // Create key = ? pairs
             .join(", ");
 
         const values = Object.values(fieldsToUpdate).filter(
-            (value) => value !== "" && value !== undefined
+            (value) => value !== "" && value !== undefined // Include only non-empty, defined values
         );
 
-        // Update the product in the database
-        await db.query(`UPDATE products SET ${updates} WHERE id = ?`, [
+        // Ensure at least one field is being updated
+        if (updates.length === 0) {
+            throw new Error("No fields to update.");
+        }
+
+        // Execute the update query
+        await db.query(`UPDATE properties SET ${updates} WHERE id = ?`, [
             ...values,
             id,
         ]);
 
-        console.log("Product updated:", id);
+        console.log("Property updated:", id);
     } catch (err) {
-        console.error("Error updating product:", err.message);
-        throw new Error("Failed to update product!");
+        console.error("Error updating property:", err.message);
+        throw new Error("Failed to update property!");
     }
 
-    revalidatePath("/dashboard/products");
-    redirect("/dashboard/products");
+    // Revalidate and redirect to the updated page
+    revalidatePath("/dashboard/properties");
+    redirect("/dashboard/properties");
 };
 
 // Delete a user
@@ -181,18 +219,18 @@ export const deleteUser = async (formData) => {
 };
 
 // Delete a product
-export const deleteProduct = async (formData) => {
+export const deleteProperty = async (formData) => {
     const { id } = Object.fromEntries(formData);
 
     try {
         // Delete the product from the database
-        await db.query(`DELETE FROM products WHERE id = ?`, [id]);
+        await db.query(`DELETE FROM properties WHERE id = ?`, [id]);
 
-        console.log("Product deleted:", id);
+        console.log("Property deleted:", id);
     } catch (err) {
-        console.error("Error deleting product:", err.message);
-        throw new Error("Failed to delete product!");
+        console.error("Error deleting Property:", err.message);
+        throw new Error("Failed to delete Property!");
     }
 
-    revalidatePath("/dashboard/products");
+    revalidatePath("/dashboard/properties");
 };
