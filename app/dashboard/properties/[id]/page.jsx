@@ -1,10 +1,13 @@
 import { updateProperty } from "@/app/lib/actions";
 import { fetchProperty } from "@/app/lib/data";
 import styles from "@/app/ui/dashboard/products/singleProduct/singleProduct.module.css";
+import ImageSlots from "@/app/ui/dashboard/products/ImageSlots";
 
 const SingleProductPage = async ({ params }) => {
     const { id } = params;
     const product = await fetchProperty(id);
+
+    console.log("Product:", product);
 
     // Ensure product data is available
     if (!product) {
@@ -126,6 +129,10 @@ const SingleProductPage = async ({ params }) => {
                         defaultValue={product.description || ""}
                     ></textarea>
 
+                    <ImageSlots
+                        maxImages={10}
+                        imagesExisting={product.images}
+                    />
                     {/* Submit Button */}
                     <button type="submit">Update Property</button>
                 </form>

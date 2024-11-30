@@ -130,38 +130,41 @@ export const fetchProperties = async (q, page) => {
 
 export const fetchProperty = async (id) => {
     try {
-        // Fetch product by ID, joining with the users table to get the owner details
-        const [products] = await db.query(
+        // Fetch property details along with user and images
+        const [properties] = await db.query(
             `
             SELECT 
                 p.id,
                 p.title,
                 p.price,
                 p.location,
-                username as user,
+                u.username AS user,
                 p.address,
                 p.zipcode,
                 p.rooms,
                 p.baths,
                 p.sqm,
                 p.description,
-                p.created_at
+                p.created_at,
+                JSON_ARRAYAGG(m.image_url) AS images
             FROM properties p
             LEFT JOIN users u ON p.user_id = u.id
+            LEFT JOIN media m ON p.id = m.property_id
             WHERE p.id = ?
+            GROUP BY p.id
             `,
             [id]
         );
 
-        // Check if the product exists
-        if (!products || products.length === 0) {
-            throw new Error(`No product found with ID ${id}`);
+        // Check if the property exists
+        if (!properties || properties.length === 0) {
+            throw new Error(`No property found with ID ${id}`);
         }
 
-        return products[0]; // Return the first result
+        return properties[0]; // Return the first result with images
     } catch (err) {
-        console.error("Error fetching product:", err.message);
-        throw new Error("Failed to fetch product!");
+        console.error("Error fetching property:", err.message);
+        throw new Error("Failed to fetch property!");
     }
 };
 

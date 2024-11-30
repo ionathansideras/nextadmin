@@ -3,6 +3,8 @@
 import db from "@/DBConfig"; // Import your MySQL database connection
 import bcrypt from "bcrypt";
 import fs from "fs";
+import path from "path";
+import { v4 as uuidv4 } from "uuid"; // Import UUID generator
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -83,7 +85,6 @@ export const updateUser = async (formData) => {
     redirect("/dashboard/users");
 };
 
-// Add a new product
 export const addProperty = async (formData) => {
     const {
         title,
@@ -98,23 +99,38 @@ export const addProperty = async (formData) => {
         sqm,
     } = Object.fromEntries(formData);
 
-    console.log(
-        "Adding new property:",
-        title,
-        desc,
-        price,
-        location,
-        address,
-        zipcode,
-        user_id,
-        rooms,
-        baths,
-        sqm
-    );
+    // Extract images from the formData
+    const images = [];
+    for (let i = 0; i < 10; i++) {
+        const file = formData.get(`images-${i}`);
+        console.log("File received:", file);
+        if (file.size > 0) {
+            images.push(file);
+        }
+    }
+
+    // Prepare directory for storing images
+    const mediaFolder = path.join(process.cwd(), "public", "media");
+    if (!fs.existsSync(mediaFolder)) {
+        fs.mkdirSync(mediaFolder, { recursive: true });
+    }
+
+    const imagePaths = [];
+    for (const image of images) {
+        const uniqueId = uuidv4(); // Generate a unique ID
+        const fileExtension = path.extname(image.name); // Get the file extension
+        const fileName = `${Date.now()}-${uniqueId}${fileExtension}`; // Add timestamp + UUID
+        const filePath = path.join(mediaFolder, fileName);
+
+        // Read the file as a buffer and write to the filesystem
+        const buffer = Buffer.from(await image.arrayBuffer());
+        fs.writeFileSync(filePath, buffer);
+        imagePaths.push(`/media/${fileName}`);
+    }
 
     try {
-        // Insert the new property into the database
-        const [result] = await db.query(
+        // Insert property details into the database
+        const [propertyResult] = await db.query(
             `INSERT INTO properties (title, description, price, location, address, zipcode, user_id, rooms, baths, sqm) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
@@ -131,17 +147,29 @@ export const addProperty = async (formData) => {
             ]
         );
 
-        console.log("New property added:", result.insertId);
+        const propertyId = propertyResult.insertId;
+        console.log("New property added:", propertyId);
+
+        // Insert image URLs into the media table with foreign key
+        for (const imagePath of imagePaths) {
+            await db.query(
+                `INSERT INTO media (property_id, image_url) VALUES (?, ?)`,
+                [propertyId, imagePath]
+            );
+        }
+
+        console.log("Images saved in media table:", imagePaths);
     } catch (err) {
-        console.error("Error adding property:", err.message);
-        throw new Error("Failed to create property!");
+        console.error("Error adding property or media:", err.message);
+        throw new Error("Failed to create property and save media!");
     }
 
+    // Revalidate and redirect
     revalidatePath("/dashboard/properties");
     redirect("/dashboard/properties");
 };
-
 export const updateProperty = async (formData) => {
+    // Extract property details from formData
     const {
         id,
         title,
@@ -155,8 +183,44 @@ export const updateProperty = async (formData) => {
         description,
     } = Object.fromEntries(formData);
 
+    // Initialize structures to track images
+    const images = [];
+    const slotsGrid = {};
+
+    // Process formData to extract images and slots-grid
+    for (let [key, value] of formData.entries()) {
+        if (key.startsWith("images-")) {
+            const index = parseInt(key.split("-")[1], 10);
+            const file = value;
+            if (file && file.size > 0) {
+                images.push({ file, index });
+            }
+        } else if (key.startsWith("slots-grid-")) {
+            const index = parseInt(key.split("-")[2], 10);
+            slotsGrid[index] = value; // Could be URL, file name, or empty string
+        }
+    }
+
+    // Prepare directory for storing images
+    const mediaFolder = path.join(process.cwd(), "public", "media");
+    if (!fs.existsSync(mediaFolder)) {
+        fs.mkdirSync(mediaFolder, { recursive: true });
+    }
+
     try {
-        // Create a map of fields to update
+        // Fetch existing images for the property
+        const [existingMedia] = await db.query(
+            `SELECT id, image_url FROM media WHERE property_id = ? ORDER BY id ASC`,
+            [id]
+        );
+
+        // Map existing media by index
+        const existingMediaByIndex = {};
+        existingMedia.forEach((media, idx) => {
+            existingMediaByIndex[idx] = media;
+        });
+
+        // Update property details if necessary
         const fieldsToUpdate = {
             title,
             price,
@@ -169,34 +233,82 @@ export const updateProperty = async (formData) => {
             description,
         };
 
-        // Generate the SQL update query dynamically based on provided values
         const updates = Object.entries(fieldsToUpdate)
-            .filter(([, value]) => value !== "" && value !== undefined) // Exclude empty or undefined values
-            .map(([key]) => `${key} = ?`) // Create key = ? pairs
+            .filter(([, value]) => value !== "" && value !== undefined)
+            .map(([key]) => `${key} = ?`)
             .join(", ");
 
         const values = Object.values(fieldsToUpdate).filter(
-            (value) => value !== "" && value !== undefined // Include only non-empty, defined values
+            (value) => value !== "" && value !== undefined
         );
 
-        // Ensure at least one field is being updated
-        if (updates.length === 0) {
-            throw new Error("No fields to update.");
+        if (updates.length > 0) {
+            await db.query(`UPDATE properties SET ${updates} WHERE id = ?`, [
+                ...values,
+                id,
+            ]);
+            console.log("Property details updated:", id);
         }
 
-        // Execute the update query
-        await db.query(`UPDATE properties SET ${updates} WHERE id = ?`, [
-            ...values,
-            id,
-        ]);
+        // Determine which existing images to delete
+        for (let index in existingMediaByIndex) {
+            index = parseInt(index, 10);
+            if (!slotsGrid.hasOwnProperty(index) || slotsGrid[index] === "") {
+                // Delete image
+                const mediaToDelete = existingMediaByIndex[index];
+                const filePath = path.join(
+                    process.cwd(),
+                    "public",
+                    mediaToDelete.image_url
+                );
 
-        console.log("Property updated:", id);
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                }
+
+                await db.query(`DELETE FROM media WHERE id = ?`, [
+                    mediaToDelete.id,
+                ]);
+                console.log(
+                    `Deleted image at slot ${index}: ${mediaToDelete.image_url}`
+                );
+            }
+        }
+
+        // Process new images
+        for (const { file, index } of images) {
+            const uniqueId = uuidv4();
+            const fileExtension = path.extname(file.name);
+            const fileName = `${Date.now()}-${uniqueId}${fileExtension}`;
+            const filePath = path.join(mediaFolder, fileName);
+
+            const buffer = Buffer.from(await file.arrayBuffer());
+            fs.writeFileSync(filePath, buffer);
+
+            const imageUrl = `/media/${fileName}`;
+
+            if (existingMediaByIndex[index]) {
+                // Replace existing image
+                await db.query(`UPDATE media SET image_url = ? WHERE id = ?`, [
+                    imageUrl,
+                    existingMediaByIndex[index].id,
+                ]);
+                console.log(`Replaced image at slot ${index}: ${imageUrl}`);
+            } else {
+                // Insert new image
+                await db.query(
+                    `INSERT INTO media (property_id, image_url) VALUES (?, ?)`,
+                    [id, imageUrl]
+                );
+                console.log(`Added new image at slot ${index}: ${imageUrl}`);
+            }
+        }
     } catch (err) {
         console.error("Error updating property:", err.message);
         throw new Error("Failed to update property!");
     }
 
-    // Revalidate and redirect to the updated page
+    // Revalidate and redirect
     revalidatePath("/dashboard/properties");
     redirect("/dashboard/properties");
 };
@@ -223,14 +335,38 @@ export const deleteProperty = async (formData) => {
     const { id } = Object.fromEntries(formData);
 
     try {
-        // Delete the product from the database
+        // Fetch associated media entries from the database
+        const [mediaEntries] = await db.query(
+            `SELECT image_url FROM media WHERE property_id = ?`,
+            [id]
+        );
+
+        if (mediaEntries.length > 0) {
+            // Delete the associated files from the media folder
+            for (const { image_url } of mediaEntries) {
+                const filePath = path.join(process.cwd(), image_url);
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                    console.log("Deleted file:", filePath);
+                }
+            }
+
+            // Delete the associated media entries from the media table
+            await db.query(`DELETE FROM media WHERE property_id = ?`, [id]);
+        }
+
+        // Delete the property from the database
         await db.query(`DELETE FROM properties WHERE id = ?`, [id]);
 
-        console.log("Property deleted:", id);
+        console.log("Property and associated media deleted:", id);
     } catch (err) {
-        console.error("Error deleting Property:", err.message);
-        throw new Error("Failed to delete Property!");
+        console.error(
+            "Error deleting Property or associated media:",
+            err.message
+        );
+        throw new Error("Failed to delete Property and associated media!");
     }
 
+    // Revalidate the path to update the UI
     revalidatePath("/dashboard/properties");
 };

@@ -1,13 +1,19 @@
 import { addProperty } from "@/app/lib/actions";
 import styles from "@/app/ui/dashboard/products/addProduct/addProduct.module.css";
 import { fetchUsers } from "@/app/lib/data";
+import ImageSlots from "@/app/ui/dashboard/products/ImageSlots";
+import FilterDropDown from "@/app/ui/dashboard/FilterDropDown";
 
 const AddPropertyPage = async () => {
     const users = await fetchUsers();
-    console.log("Users:", users);
+
     return (
         <div className={styles.container}>
-            <form action={addProperty} className={styles.form}>
+            <form
+                action={addProperty}
+                className={styles.form}
+                id="add-property-form"
+            >
                 {/* Product Details */}
                 <input type="text" placeholder="Title" name="title" required />
                 <input
@@ -16,8 +22,6 @@ const AddPropertyPage = async () => {
                     name="price"
                     required
                 />
-
-                {/* New Fields */}
                 <input
                     type="text"
                     placeholder="Location"
@@ -36,19 +40,7 @@ const AddPropertyPage = async () => {
                     name="zipcode"
                     required
                 />
-                <input
-                    list="users"
-                    name="user_id"
-                    placeholder="Search or select a user"
-                    required
-                />
-                <datalist id="users">
-                    {users.users.map((user) => (
-                        <option key={user.id} value={user.id}>
-                            {user.username} ({user.email})
-                        </option>
-                    ))}
-                </datalist>
+
                 <input
                     type="number"
                     placeholder="Rooms"
@@ -70,6 +62,8 @@ const AddPropertyPage = async () => {
                     min="1"
                     required
                 />
+                {/* FilterDropDown Component */}
+                <FilterDropDown users={users.users} name="user_id" />
 
                 <textarea
                     required
@@ -78,6 +72,10 @@ const AddPropertyPage = async () => {
                     rows="16"
                     placeholder="Description"
                 ></textarea>
+
+                {/* Call the ImageSlots Component */}
+                <ImageSlots />
+
                 <button type="submit">Submit</button>
             </form>
         </div>
